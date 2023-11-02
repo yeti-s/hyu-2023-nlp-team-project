@@ -1,0 +1,5 @@
+ignore/
+*.pt
+*.bin
+__pycache__/
+data/
