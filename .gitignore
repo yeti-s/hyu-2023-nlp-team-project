@@ -3,3 +3,4 @@ ignore/
 *.bin
 __pycache__/
 data/
+checkpoint/
