@@ -48,7 +48,7 @@ def get_dataset_from_json(json_file, num_data=0):
         data_per_threads = num_data//num_threads
         t_results = []
         threads = []
-        for i in range(num_threads):
+        for i in range(num_threads-1):
             t_result = [[], []]
             t_results.append(t_result)
             
@@ -56,11 +56,13 @@ def get_dataset_from_json(json_file, num_data=0):
             thread.daemon = True
             thread.start()
             threads.append(thread)
+            
+        data_dict = {'article':[], 'abstractive':[]}
+        get_input_and_labels(documents[(num_threads-1)*data_per_threads:], data_dict['article'], data_dict['abstractive'])
 
         for thread in threads:
             thread.join()
         
-        data_dict = {'article':[], 'abstractive':[]}
         for t_result in t_results:
             data_dict['article'].extend(t_result[0])
             data_dict['abstractive'].extend(t_result[1])
@@ -207,7 +209,7 @@ def train_model(model, dataloader, checkpoint_dir=None, epochs=1, lr=2e-5, devic
             num_trained += 1
             
             # save checkpoint 
-            if step % 1000 == 0:
+            if (step+1) % 1000 == 0:
                 checkpoint.save()
                 print(f'loss : {total_loss/num_trained}')
         
