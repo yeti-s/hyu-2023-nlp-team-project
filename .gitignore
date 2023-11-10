@@ -4,3 +4,6 @@ ignore/
 __pycache__/
 data/
 checkpoint/
+
+# virtual machine(written by sejeong)
+myvenv
