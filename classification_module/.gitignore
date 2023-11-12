@@ -3,3 +3,5 @@
 data
 .ipynb_checkpoints
 data_processing.ipynb
+__pycache__
+load_data_tutorial-all.ipynb
