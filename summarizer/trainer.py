@@ -1,83 +1,70 @@
 import torch
 import json
 import os
-import sys
 import argparse
+import glob
+import functools
 
 from tqdm import tqdm
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from torch.utils.data import DataLoader, TensorDataset
 from torch.optim import AdamW, lr_scheduler
 
 ## config
-batch_size = 1
-model_name = 'gogamza/kobart-base-v2'
-dataset_file = 'data/dataset.pt'
-train_file = 'data/train_original.json' # num of total data is about 240000
-valid_file = 'data/valid_original.json' # num of total data is about 30000
-num_threads = 8
-
+model_name = 'yeti-s/kobart-title-generator'
 model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
+tokenizer = AutoTokenizer.from_pretrained(model_name)    
 
 # read json & tokenize
-def get_input_and_labels(documents, articles, abstractives):
-    for document in documents:
-        article = ''
-        for text in document['text']:
-            if len(text) > 0:
-                article += (text[0]['sentence'] + ' ')
-        articles.append(article)
-        
-        abstractive = document['abstractive']
-        if len(abstractive) > 0:
-            abstractive = abstractive[0]
-        abstractives.append(abstractive)
-        
-def get_dataset_from_json(json_file, num_data=0):
-    with open(json_file, 'r') as f:
-        json_data = json.load(f)
-        documents = json_data['documents']
-        data_size = len(documents)
-        if num_data == 0 or num_data > data_size:
-            num_data = data_size
-        
-        data_per_threads = num_data//num_threads
-        t_results = []
-        threads = []
-        for i in range(num_threads-1):
-            t_result = [[], []]
-            t_results.append(t_result)
-            
-            thread = Thread(target=get_input_and_labels, args=(documents[i*data_per_threads:(i+1)*data_per_threads], t_result[0], t_result[1],))
-            thread.daemon = True
-            thread.start()
-            threads.append(thread)
-            
-        data_dict = {'article':[], 'abstractive':[]}
-        get_input_and_labels(documents[(num_threads-1)*data_per_threads:], data_dict['article'], data_dict['abstractive'])
+def replace_special_char(text):
+    text = text.replace("\\\'", "\'")
+    text = text.replace('\\\"', '\"')
+    return text.replace("\\", "")
 
-        for thread in threads:
-            thread.join()
-        
-        for t_result in t_results:
-            data_dict['article'].extend(t_result[0])
-            data_dict['abstractive'].extend(t_result[1])
+def get_data_from_json(json_files):
+    contents = []
+    titles = []
+    
+    for json_file in json_files:
+        with open(json_file, 'r', encoding='UTF8') as f:
+            json_data = json.load(f)
+            source_data_info = json_data['sourceDataInfo']
+            contents.append(replace_special_char(source_data_info['newsContent']))
+            titles.append(replace_special_char(source_data_info['newsTitle']))
             
+    return contents, titles
+
+
+def create_dataset(data_dir, num_threads, num_data = 0):
+    json_files = glob.glob(os.path.join(data_dir, '*.json'))
+    num_jsons = len(json_files)
+    if num_data == 0 or num_data > num_jsons:
+        num_data = num_jsons
+    json_files = json_files[:num_data]
+    
+    data_per_threads = num_data//num_threads
+    with ThreadPoolExecutor(max_workers=num_threads-1) as executor:
+        threads = [executor.submit(get_data_from_json, json_files[i*data_per_threads:(i+1)*data_per_threads]) for i in range(num_threads-1)]
+        contents, titles = get_data_from_json(json_files[(num_threads-1)*data_per_threads:])
+        
+        for thread in threads:
+            sub_contents, sub_titles = thread.result()
+            contents.extend(sub_contents)
+            titles.extend(sub_titles)
+            
+        data_dict = {'content':contents, 'title':titles}
         return Dataset.from_dict(data_dict)
 
 
-
-def preprocess(examples):
-    inputs = tokenizer(examples['article'], return_tensors='pt', max_length=1024, padding='max_length', truncation=True)
-    labels = tokenizer(examples['abstractive'], return_tensors='pt', max_length=1024, padding='max_length', truncation=True)
+def preprocess(examples, max_length):
+    inputs = tokenizer(examples['content'], return_tensors='pt', max_length=max_length, padding='max_length', truncation=True)
+    labels = tokenizer(examples['title'], return_tensors='pt', max_length=max_length, padding='max_length', truncation=True)
     inputs['labels'] = labels['input_ids']
     return inputs
 
-def create_dataloader(dataset):
+def create_dataloader(dataset, batch_size):
     input_ids = dataset['input_ids']
     attention_mask = dataset['attention_mask']
     labels = dataset['labels']
@@ -111,15 +98,17 @@ def eval_model(model, val_dataloader):
     return total_loss
 
 
-
 class Checkpoint():
-    def __init__(self, model, optimizer, scheduler) -> None:
+    def __init__(self, model, optimizer, scheduler, root_dir, auth_token) -> None:
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.epoch = 0
         self.last_step = -1
         self.best_loss = 1e20
+        self.auth_token = auth_token
+        self.set_root_dir(root_dir)
+        
         
     def set_root_dir(self, root_dir):
         if root_dir is not None:
@@ -159,9 +148,12 @@ class Checkpoint():
     def eval(self, val_dataloader):
         if not self.root_dir is None:
             loss = eval_model(self.model, val_dataloader)
-            if self.loss > loss:
-                self.loss = loss
+            if self.best_loss > loss:
+                self.best_loss = loss
                 torch.save(self.model.state_dict(), os.path.join(self.root_dir, 'best.pt'))
+                
+                if self.auth_token is not None:
+                    self.model.push_to_hub(model_name, use_auth_token=self.auth_token)
     
     def next(self):
         self.scheduler.step()
@@ -174,11 +166,11 @@ class Checkpoint():
             os.remove(self.path)
 
 
-def train_model(model, dataloader, checkpoint_dir=None, epochs=1, lr=2e-5, device=torch.device('cuda')):
+def train_model(model, dataloader, checkpoint_dir=None, auth_token=None, epochs=1, lr=2e-5, device=torch.device('cuda')):
     model.to(device)
     optimizer = AdamW(model.parameters(), lr=lr)
     scheduler = lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda epoch:0.95**epoch)
-    checkpoint = Checkpoint(model, optimizer, scheduler)
+    checkpoint = Checkpoint(model, optimizer, scheduler, checkpoint_dir, auth_token)
     checkpoint.set_root_dir(checkpoint_dir)
 
     for epoch in range(checkpoint.epoch, epochs):
@@ -221,25 +213,38 @@ def train_model(model, dataloader, checkpoint_dir=None, epochs=1, lr=2e-5, devic
 
 
 def main(args):
-    if bool(args.data):
-        dataloader = torch.load(dataset_file)
-    else:
-        train_dataset = get_dataset_from_json(train_file)
-        val_dataset = get_dataset_from_json(valid_file)
+    if args.dataset is not None:
+        dataloader = torch.load(args.dataset)
+        
+    elif args.train is not None and args.val is not None:
+        train_dataset = create_dataset(args.train, int(args.num_threads))
+        val_dataset = create_dataset(args.val, int(args.num_threads))
+        preprocessor = functools.partial(preprocess, max_length=int(args.max_length))
         dataloader = {
-            'train': create_dataloader(train_dataset.map(preprocess, batched=True).with_format("torch")),
-            'val': create_dataloader(val_dataset.map(preprocess, batched=True).with_format("torch"))
+            'train': create_dataloader(train_dataset.map(preprocessor, batched=True).with_format("torch"), int(args.batch_size)),
+            'val': create_dataloader(val_dataset.map(preprocessor, batched=True).with_format("torch"), int(args.batch_size))
         }
-        torch.save(dataloader, dataset_file)
         
-        
-    train_model(model, dataloader, './checkpoint', epochs=5)
-    torch.save(model, 'bart.pt')
-    model.push_to_hub('yeti-s/kobart-base-v2-news-summarization', use_auth_token=args.token)
+        if args.save_dataset is not None:
+            torch.save(dataloader, args.save_dataset)
+            
+    else:
+        print("'--dataset' or '--train and --val' needed!")
+        exit(1)
+
+    train_model(model, dataloader, checkpoint_dir=args.checkpoint, auth_token=args.token, epochs=5)
+    torch.save(model, 'last.pt')
     
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='train bart model & upload hugginface hub')
-    parser.add_argument('--token', required=True, help='write token for huggingface hub')
-    parser.add_argument('--data', required=False, default=False, help='load dataloader from dataset.pt')
+    parser.add_argument('--token', required=False, default=None, help='write token for huggingface hub')
+    parser.add_argument('--dataset', required=False, default=None, help='load dataloader from dataset.pt')
+    parser.add_argument('--train', required=False, default=None, help='train json files dir path')
+    parser.add_argument('--val', required=False, default=None, help='validation json files dir path')
+    parser.add_argument('--save_dataset', required=False, default=None, help='save created dataset from train and val data')
+    parser.add_argument('--max_length', required=False, default=764, help='max token size')
+    parser.add_argument('--checkpoint', required=False, default=None, help='train checkpoint dir')
+    parser.add_argument('--num_threads', required=False, default=1, help='num threads for creating dataset from json files')
+    parser.add_argument('--batch_size', required=False, default=1, help='batch size')
     main(parser.parse_args())
