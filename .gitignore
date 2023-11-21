@@ -5,5 +5,8 @@ __pycache__/
 data/
 checkpoint/
 
+# for mac
+.DS_Store
+
 # virtual machine(written by sejeong)
 myvenv
