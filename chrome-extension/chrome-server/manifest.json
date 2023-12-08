@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "clickbait-detection-summary",
+    "description": "Hi Chrome",
+    "version": "1.0.0",
+    "permissions": [
+        "activeTab",
+        "storage"
+    ],
+    "host_permissions": [
+        "http://localhost:8000/"
+    ],
+    "content_scripts": [
+        {
+            "matches": ["*://news.naver.com/*"],
+            "js": ["contentScript.js"]
+        }
+    ]
+}
