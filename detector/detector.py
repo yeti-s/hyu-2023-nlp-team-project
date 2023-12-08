@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification
 
 class Detector():
     def __init__(self, model_name:str='yeti-s/clickbait_detector', device=torch.device('cuda')) -> None:
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = BertForSequenceClassification.from_pretrained(model_name)
+        self.tokenizer = BertTokenizer.from_pretrained(model_name)
         self.device = device
         self.model.eval().to(device)
     
     @torch.no_grad()
     def detect(self, title:str, content:str) -> str:
-        text = f'{title} {content}'
-        input_ids = self.tokenizer(text, return_tensors='pt').to(self.device)
+        input_ids = self.tokenizer(title, content, return_tensors='pt').to(self.device)
         outputs = self.model(**input_ids)
         logits = outputs.logits
         pred = torch.argmax(torch.nn.functional.softmax(logits), dim=1)
