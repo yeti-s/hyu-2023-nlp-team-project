@@ -12,7 +12,7 @@ class Summarizer():
     
     @torch.no_grad()
     def summarize(self, content:str) -> str:
-        input_ids = self.tokenizer(content, return_tensors='pt').to(self.device)
+        input_ids = self.tokenizer(content, return_tensors='pt', truncation=True, max_length=1024).to(self.device)
         gen_ids = self.model.generate(**input_ids, max_length=self.max_length, use_cache=True)
         generated = self.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
         return generated
