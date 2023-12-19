@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-from detector.detector import Detector
+import torch
+from detector.detector_long_bert import Detector
 from summarizer.summarizer import Summarizer
 
 class TrueTitle():
-    def __init__(self, detector:str='yeti-s/clickbait_detector', summarizer:str='yeti-s/kobart-title-generator') -> None:
-        self.detector = Detector(detector)
-        self.summarizer = Summarizer(summarizer)
+    def __init__(self, detector:str='yeti-s/longbert-clickbait-detector', summarizer:str='yeti-s/kobart-title-generator', device=torch.device('cuda')) -> None:
+        self.detector = Detector(detector, device=device)
+        self.summarizer = Summarizer(summarizer, device=device)
     
     def create(self, title:str, content:str):
         new_title = ''
@@ -16,10 +17,10 @@ class TrueTitle():
         return is_reliable, new_title
     
 def unit_test():
-    true_title = "'나를 두고 아리랑'의 작곡가 겸 가수 김중신 정정한 80세 잔치"
-    true_content = "1970년대 히트곡 '나를 두고 아리랑'을 만들고 부른 작곡가 겸 가수 김중신이 지난 2일(이하 현지시간) 미국 하와이에서 지병으로 별세했다고 박성서 대중음악평론가가 8일 전했다. 향년 81세. 1942년 대구에서 태어난 고인은 대구의 호텔 나이트클럽에서 기타리스트로 음악 활동을 시작해 1971년 그룹사운드 '윤항기와 키브라더스'에서 활동했다. 1974년에는 그룹사운드 '김훈과 트리퍼스'의 '나를 두고 아리랑'을 작사·작곡했으며, 이듬해 이 노래를 현혜미와 직접 듀엣으로 불러 발표했다. '나를 두고 아리랑'은 '나를 나를 나를 두고/ 물건너 가시더니/ 한 달 두 달 해가 또 가도/ 편지 한 장 없네'라는 서글픈 가사로 인기를 끌어 고인의 대표곡으로 남았다. 박성서 대중음악평론가는 '이 곡은 우리나라 고유의 선율을 당시 유행하던 고고리듬으로 편곡하고 그룹사운드 반주를 붙여 만든 파격적인 노래'라며 '김훈과 트리퍼스는 '나를 두고 아리랑'으로 당시 10대 가수상까지 받았다'고 말했다. 고인과 함께 음악 활동을 한 윤항기는 '1970년대 당시 많은 가수가 팝적인 음악을 추구할 때, 김중신은 한국 전통 선율을 활용한 '나를 두고 아리랑'으로 우리 가요에 변화를 줬다'고 평했다. '나를 두고 아리랑'은 이후 윤항기를 비롯해 나훈아, 조미미, 이용복, 선우성 등 많은 가수가 리메이크한 1970년대 가요계 명곡 가운데 하나로 남았다."
+    title = '초전도체 발명'
+    content = '연구진이 상온상압 초전도체라고 주장했던 LK-99에 대해 한국초전도저온학회 검증위원회가 "원논문의 데이터와 국내외 재현실험연구결과를 종합해 고려해 보면, LK-99 가 상온 상압 초전도체라는 근거는 전혀 없다"고 13일 밝혔다. 검증위는 이날 그동안의 국내외 검증 시도를 종합해 백서를 발간, 온라인을 통해 배포했다. 백서에 따르면 그동안 국내 8개 연구소에서 LK-99 관련 논문 저자들이 제시한 방법에 따라 재현연구를 한 결과, 상온 또는 저온에서 초전도성을 보인 결과는 없었다. 검증위는 특히 "국내외 재현 실험 연구에서 저항 0과 마이스너 효과를 보여주는 경우는 없었다"며 "대부분의 결과는 LK-99 가 오히려 비저항 값이 매우 큰 부도체임을 보여주고 있다"고 설명했다. 검증위는 또 퀀텀에너지연구소의 LK-99 시료를 제공받아 교차 측정하고자 했으나, 연구소로부터 시료는 제공되지 않았고 지금까지 교차측정을 통한 검증은 이뤄지지 못했다고 덧붙였다.'
     true_title = TrueTitle()
-    print(true_title.create(true_title, true_content))
+    print(true_title.create(title, content))
     
 if __name__ == '__main__':
     unit_test()
