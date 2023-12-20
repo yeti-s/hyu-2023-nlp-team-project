@@ -131,34 +131,23 @@ class _MyHomePageState extends State<MyHomePage> {
     }
     newsTexts = newsTexts.trim(); // 문자열 앞/뒤의 whitespace 전부 제거
 
-    setState(() {
-      isLoading = false;
-      state = PageState.notFake;
-      title = newsTitle;
-      contents = newsTexts;
-      message = null;
-    });
-
-    try {
-      final aiResponse = await http.post(
-          Uri.parse('http://127.0.0.1:8000/scrape'),
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            'Content-Type': 'application/json',
-            'Accept': '*/*'
-          },
-          body: {
-            "title": newsTitle,
-            "content": newsTexts,
-          }
+    try {/// 의문점 : 아니 왜 post method는 오류가 나는거지? post method로 해 두면 아예 Uncaught 오류가 나온다.
+      final aiResponse = await http.get(
+        // Uri.http('127.0.0.1:8000', '/scrape', {"title": newsTitle, "content": newsTexts}),
+        Uri.parse('http://127.0.0.1:8000/scrape?title=$newsTitle&content=$newsTexts'),
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Accept': '*/*',
+        },
       );
 
       if(aiResponse.statusCode == 200) {
-        final result = json.decode(aiResponse.body);
+        final result = json.decode(utf8.decode(aiResponse.bodyBytes));
 
         // 응답 형태 : {"is_reliable": result[0], "new_title": result[1]}
         if(result is Map<String, dynamic> && result.containsKey('is_reliable') && result.containsKey('new_title')) {
-          if(result['is_reliable'] != 'clickbait') {
+          if(result['is_reliable'] != 0) {
             setState(() {
               isLoading = false;
               state = PageState.notFake;

@@ -5,6 +5,10 @@
     "content_security_policy": {
         "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
     },
+    "host_permissions": [
+        "https://127.0.0.1:8000/*",
+        "http://127.0.0.1:8000/*"
+    ],
     "permissions": [
         "scripting",
         "activeTab",
